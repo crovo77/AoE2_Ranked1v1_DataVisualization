@@ -1,1 +1,87 @@
-<h1>Hello!</h1>
+<html>
+<script src='https://d3js.org/d3.v5.min.js'></script>
+<h1>Data Project</h1>
+<body onload='init()'>
+    <svg width=600 height=600>
+    </svg>
+    <button id='prevBtn'>Previous</button>
+    <button id='nextBtn'>Next</button>
+    <script>
+        let data1v1;
+        async function init() {
+            const r = await d3.csv('./AoE2_ranked_1v1_data.csv');
+            data1v1 = r;
+        }
+        function getData1v1() {
+            return new Promise((resolve) => {
+                const checkDataPresent = () => {
+                    if (typeof data1v1 !== 'undefined' && data1v1 !== null) {
+                        resolve(data1v1);
+                    } else {
+                        setTimeout(checkDataPresent, 100);
+                    }
+                }
+                checkDataPresent();
+            });
+        }
+
+        const disp = d3.select('svg');
+        const margin = 50;
+        const width = 500;
+        const height = 500;
+        function resetSVG() {
+            disp.html = '';
+            disp.attr('width', width + 2 * margin).attr('height', height + 2 * margin);
+        }
+        function newGroup(tx, ty) {
+            return disp.append('g').attr('transform', 'translate(' + tx + ',' + ty + ')');
+        }
+        function colValCnts(data, col_name) {
+            const cntMap = new Map();
+            data.forEach(d => {
+                const val = d[col_name];
+                cntMap.set(val, (cntMap.get(val) || 0) + 1);
+            });
+            return Array.from(cntMap, ([key, value]) => ({ category : key, frequency : value }));
+        }
+        function barGraph(data) {
+            newGroup(margin, margin);
+            const xs = d3.scaleBand().domain(data.map(d => d.category)).range([0, width]).padding(0.1);
+            const ys = d3.scaleLinear().domain([0, d3.max(data, d => d.frequency)]).range([height, 0]);
+            disp.selectAll('.rect').data(data).enter().append('rect')
+                .attr('x', d => xs(d.category))
+                .attr('y', d => ys(d.frequency))
+                .attr('width', xs.bandwidth())
+                .attr('height', d => height - ys(d.frequency));
+            // axes
+            newGroup(0, height).call(d3.axisBottom(xs));
+            newGroup(0, 0).call(d3.axisLeft(ys));
+        }
+
+        let currPage = 0;
+        const totalPages = 2;
+        async function setPage(pageNum) {
+            const data = await getData1v1();
+            resetSVG();
+            switch (pageNum) {
+            case 0:
+                barGraph(colValCnts(data, 'map_type.name'));
+                break;
+            case 1:
+                break;
+            default:
+                break;
+            }
+        }
+        setPage(currPage);
+
+        const prevBtn = document.getElementById('prevBtn');
+        async function prevPage() { await setPage(currPage = Math.max(currPage - 1, 0)); }
+        prevBtn.addEventListener('click', prevPage);
+        const nextBtn = document.getElementById('nextBtn');
+        async function nextPage() { await setPage(currPage = Math.min(currPage + 1, totalPages - 1)); }
+        nextBtn.addEventListener('click', nextPage);
+
+    </script>
+</body>
+</html>
