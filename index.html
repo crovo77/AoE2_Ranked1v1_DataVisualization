@@ -12,7 +12,6 @@
         #controls-container {
             flex: 1;
             max-width: 240;
-            background-color: lightgray;
         }
         #navigation-container {
             display: flex;
@@ -31,15 +30,15 @@
     <h1>Data Project</h1>
 </header>
 <body onload='init()'>
-    <div id="master-container">
-        <div id="graphic-container">
+    <div id='master-container'>
+        <div id='graphic-container'>
             <svg></svg>
-            <div id="navigation-container">
+            <div id='navigation-container'>
                 <button id='prevBtn'>Previous</button>
                 <button id='nextBtn'>Next</button>
             </div>
         </div>
-        <div id="controls-container"></div>
+        <div id='controls-container'></div>
     </div>
      
     <script>
@@ -52,6 +51,8 @@
             const nextBtn = document.getElementById('nextBtn');
             nextBtn.addEventListener('click', nextPage);
             setPage(currPage);
+            addDoubleSlider('Winner\'s Rating:', 'rating.win');
+            
         }
         function getData1v1() {
             return new Promise((resolve) => {
@@ -71,7 +72,7 @@
         const height = window.screen.height * 3 / 5;
         const disp = d3.select('#graphic-container').select('svg')
                             .attr('width', width+2*margin).attr('height', height+2*margin);
-        const controls = d3.select('#controls-container').append('svg');
+        const controls = d3.select('#controls-container');
 
         function resetSVG() {
             disp.selectAll('*').remove();
@@ -79,12 +80,13 @@
         function newGroup(tx, ty) {
             return disp.append('g').attr('transform', 'translate(' + tx + ',' + ty + ')');
         }
-        function colValCnts(data, col_name) {
-            const cntMap = new Map();
+        function colValCnts(data, colName) {
+            let cntMap = new Map();
             data.forEach(row => {
-                const val = row[col_name];
+                const val = row[colName];
                 cntMap.set(val, (cntMap.get(val) || 0) + filterOut(row));
             });
+            cntMap = sortMap(cntMap);
             return Array.from(cntMap, ([key, value]) => ({ category : key, frequency : value }));
         }
         const filters = {};
@@ -135,9 +137,55 @@
         async function prevPage() { await setPage(currPage = Math.max(currPage - 1, 0)); }
         async function nextPage() { await setPage(currPage = Math.min(currPage + 1, totalPages - 1)); }
         
+        async function colRange(colName) {
+            const data = await getData1v1();
+            const range = [
+                d3.min(data, function(d) { return +d[colName]; }),
+                d3.max(data, function(d) { return +d[colName]; })
+            ]
+            return range;
+        }
 
-        function brushed() {
+        async function addDoubleSlider(sldrName, colName) {
+            const cntrl_width = 240;
+            const sldr_height = 50;
+            const padding = 20;
+            const sldr = controls.append('svg').attr('width', cntrl_width).attr('height', sldr_height);
+            sldr.append('text').attr('x', 0).attr('y', sldr_height / 2).style('alignment-baseline', 'middle').text(sldrName);
+            const range = await colRange(colName);
+            const currRange = [...range];
+            filters[colName] = currRange;
 
+            const xs = d3.scaleLinear().domain(range).range([6 * sldrName.length + padding, cntrl_width - padding]);
+
+            sldr.append('line')
+                .attr('x1', xs.range()[0]).attr('y1', sldr_height / 2)
+                .attr('x2', xs.range()[1]).attr('y2', sldr_height / 2)
+                .attr('stroke', 'gray')
+                .attr('stroke-width', 5);
+            
+            const handle1 = sldr.append('g')
+                .attr('transform', 'translate(' + xs(range[0]) + ',' + (sldr_height / 2) + ')')
+                .call(d3.drag().on('drag', () => { brush(d3.event.x, 0); }));
+            handle1.append('circle').attr('r', 8).attr('fill', 'blue');
+            const lbl1 = handle1.append('text').attr('y', 5 * sldr_height / 12).attr('x', 0)
+                                .attr('text-anchor', 'middle').style('alignment-baseline', 'middle').text(range[0].toString());
+            const handle2 = sldr.append('g')
+                .attr('transform', 'translate(' + xs(range[1]) + ',' + (sldr_height / 2) + ')')
+                .call(d3.drag().on('drag', () => { brush(d3.event.x, 1); }));
+            handle2.append('circle').attr('r', 8).attr('fill', 'blue');
+            const lbl2 = handle2.append('text').attr('y', -4 * sldr_height / 12).attr('x', 0)
+                                .attr('text-anchor', 'middle').style('alignment-baseline', 'middle').text(range[1].toString());
+            function brush(x, ind) {
+                const newX = Math.max(xs.range()[0], Math.min(xs.range()[1], x));
+                currRange[ind] = Math.max(range[0], Math.min(range[1], Math.round(xs.invert(newX))));
+                if (currRange[0] > currRange[1]) {
+                    currRange[ind] = currRange[1 - ind];
+                }
+                [handle1, handle2][ind].attr('transform', 'translate(' + xs(currRange[ind]) + ',' + (sldr_height / 2) + ')');
+                [lbl1, lbl2][ind].text(currRange[ind]);
+                setPage(currPage);
+            }
         }
 
         function cast(val, type) {
@@ -150,6 +198,14 @@
             case 'undefined': return undefined;
             default: return val;
             }
+        }
+        function sortMap(map) {
+            return new Map([...map.entries()].sort((a, b) => {
+                if (typeof a[0] === 'string' && typeof b[0] === 'string') {
+                    return a[0].localeCompare(b[0]);
+                }
+                return a[0] - b[0];
+            }));
         }
     </script>
 </body>
