@@ -1,16 +1,57 @@
 <html>
 <script src='https://d3js.org/d3.v5.min.js'></script>
-<h1>Data Project</h1>
+<head>
+    <title>Data Vis Project</title>
+    <style>
+        header h1 {
+            text-align: center;
+        }
+        #master-container {
+            display: flex;
+        }
+        #controls-container {
+            flex: 1;
+            max-width: 240;
+            background-color: lightgray;
+        }
+        #navigation-container {
+            display: flex;
+            justify-content: center;
+        }
+        button {
+            width: 150px;
+            height: 50px;
+            margin: 10px;
+            font-size: x-large;
+            text-align: center;
+        }
+    </style>
+</head>
+<header>
+    <h1>Data Project</h1>
+</header>
 <body onload='init()'>
-    <svg width=600 height=600>
-    </svg>
-    <button id='prevBtn'>Previous</button>
-    <button id='nextBtn'>Next</button>
+    <div id="master-container">
+        <div id="graphic-container">
+            <svg></svg>
+            <div id="navigation-container">
+                <button id='prevBtn'>Previous</button>
+                <button id='nextBtn'>Next</button>
+            </div>
+        </div>
+        <div id="controls-container"></div>
+    </div>
+     
     <script>
         let data1v1;
         async function init() {
-            const r = await d3.csv('./AoE2_ranked_1v1_data.csv');
+            const r = await d3.csv('AoE2_ranked_1v1_data.csv');
             data1v1 = r;
+            const prevBtn = document.getElementById('prevBtn');
+            prevBtn.addEventListener('click', prevPage);
+            const nextBtn = document.getElementById('nextBtn');
+            nextBtn.addEventListener('click', nextPage);
+            setPage(currPage);
         }
         function getData1v1() {
             return new Promise((resolve) => {
@@ -24,29 +65,40 @@
                 checkDataPresent();
             });
         }
-
-        const disp = d3.select('svg');
+        
         const margin = 50;
-        const width = 500;
-        const height = 500;
+        const width = window.screen.width * 19 / 24;
+        const height = window.screen.height * 3 / 5;
+        const disp = d3.select('#graphic-container').select('svg')
+                            .attr('width', width+2*margin).attr('height', height+2*margin);
+        const controls = d3.select('#controls-container').append('svg');
+
         function resetSVG() {
-            disp.html = '';
-            disp.attr('width', width + 2 * margin).attr('height', height + 2 * margin);
+            disp.selectAll('*').remove();
         }
         function newGroup(tx, ty) {
             return disp.append('g').attr('transform', 'translate(' + tx + ',' + ty + ')');
         }
         function colValCnts(data, col_name) {
             const cntMap = new Map();
-            data.forEach(d => {
-                const val = d[col_name];
-                cntMap.set(val, (cntMap.get(val) || 0) + 1);
+            data.forEach(row => {
+                const val = row[col_name];
+                cntMap.set(val, (cntMap.get(val) || 0) + filterOut(row));
             });
             return Array.from(cntMap, ([key, value]) => ({ category : key, frequency : value }));
         }
+        const filters = {};
+        function filterOut(row) {
+            for (const [key, value] of Object.entries(filters)) {
+                const val = cast(row[key], typeof(value[0]));
+                if (!((val >= value[0]) && (val <= value[1]))) {
+                    return false;
+                }
+            }
+            return true;
+        }
         function barGraph(data) {
-            newGroup(margin, margin);
-            const xs = d3.scaleBand().domain(data.map(d => d.category)).range([0, width]).padding(0.1);
+            const xs = d3.scaleBand().domain(data.map(d => d.category)).range([margin, width+margin]).padding(0.05);
             const ys = d3.scaleLinear().domain([0, d3.max(data, d => d.frequency)]).range([height, 0]);
             disp.selectAll('.rect').data(data).enter().append('rect')
                 .attr('x', d => xs(d.category))
@@ -54,8 +106,13 @@
                 .attr('width', xs.bandwidth())
                 .attr('height', d => height - ys(d.frequency));
             // axes
-            newGroup(0, height).call(d3.axisBottom(xs));
-            newGroup(0, 0).call(d3.axisLeft(ys));
+            newGroup(0, height).call(d3.axisBottom(xs))
+                .selectAll('text')
+                    .style('font-size', '16px')
+                    .style('text-anchor', 'end').attr('dx', '-.4em').attr('dy', '.2em').attr('transform', 'rotate(-50)');
+            newGroup(margin, 0).call(d3.axisLeft(ys))
+                .selectAll('text')
+                    .style('font-size', '12px');
         }
 
         let currPage = 0;
@@ -68,20 +125,32 @@
                 barGraph(colValCnts(data, 'map_type.name'));
                 break;
             case 1:
+                barGraph(colValCnts(data, 'civ.win.name'));
                 break;
             default:
                 break;
             }
         }
-        setPage(currPage);
 
-        const prevBtn = document.getElementById('prevBtn');
         async function prevPage() { await setPage(currPage = Math.max(currPage - 1, 0)); }
-        prevBtn.addEventListener('click', prevPage);
-        const nextBtn = document.getElementById('nextBtn');
         async function nextPage() { await setPage(currPage = Math.min(currPage + 1, totalPages - 1)); }
-        nextBtn.addEventListener('click', nextPage);
+        
 
+        function brushed() {
+
+        }
+
+        function cast(val, type) {
+            switch (type) {
+            case 'boolean': return Boolean(val);
+            case 'number': return Number(val);
+            case 'bigint': return BigInt(val);
+            case 'string': return String(val);
+            case 'symbol': return Symbol(val);
+            case 'undefined': return undefined;
+            default: return val;
+            }
+        }
     </script>
 </body>
 </html>
