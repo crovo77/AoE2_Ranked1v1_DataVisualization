@@ -44,15 +44,24 @@
     <script>
         let data1v1;
         async function init() {
-            const r = await d3.csv('AoE2_ranked_1v1_data.csv');
+            const r = await d3.csv('AoE2_ranked_1v1_data.csv', function(d) {
+                d.avg_rating = Math.round((+d['rating.lose'] + +d['rating.win']) / 2);
+                d.duration_min = +((+d.duration[d.duration.length - 2]) >= 3) + +d.duration.slice(-5, -3) + (60 * +d.duration.slice(0, -6));
+                d.duration_min += (d.duration_min == 0); // have to alter this data a little in order to have valid domain for logarithmic scale.
+                // 0 min matches are in practice the same as 1 min matches at least
+                d.colorname_win = [null, '1. Blue', '2. Red', '3. Green', '4. Yellow', '5. Cyan', '6. Purple', '7. Grey', '8. Orange'][+d['color.win']];
+                d.colorname_lose = [null, '1. Blue', '2. Red', '3. Green', '4. Yellow', '5. Cyan', '6. Purple', '7. Grey', '8. Orange'][+d['color.lose']];
+                d['rating_change.win'] = +d['rating_change.win'];
+                return d;
+            });
             data1v1 = r;
             const prevBtn = document.getElementById('prevBtn');
             prevBtn.addEventListener('click', prevPage);
             const nextBtn = document.getElementById('nextBtn');
             nextBtn.addEventListener('click', nextPage);
             setPage(currPage);
-            addDoubleSlider('Winner\'s Rating:', 'rating.win');
-            
+            addDoubleSlider('Mean Rating: ', 'avg_rating', 'linear');
+            addDoubleSlider('Duration (min):', 'duration_min', 'log');
         }
         function getData1v1() {
             return new Promise((resolve) => {
@@ -74,20 +83,23 @@
                             .attr('width', width+2*margin).attr('height', height+2*margin);
         const controls = d3.select('#controls-container');
 
-        function resetSVG() {
-            disp.selectAll('*').remove();
-        }
+        function resetSVG() { disp.selectAll('*').remove(); }
         function newGroup(tx, ty) {
             return disp.append('g').attr('transform', 'translate(' + tx + ',' + ty + ')');
         }
-        function colValCnts(data, colName) {
+        function colValCnts(data, colNames) {
             let cntMap = new Map();
+            const entries = colNames.map(key => [key, 0]);
             data.forEach(row => {
-                const val = row[colName];
-                cntMap.set(val, (cntMap.get(val) || 0) + filterOut(row));
+                for (let colName of colNames) {
+                    const val = row[colName];
+                    if (val == null) continue;
+                    cntMap.set(val, (cntMap.get(val) || Object.fromEntries(entries)));
+                    cntMap.get(val)[colName] += filterOut(row);
+                }
             });
             cntMap = sortMap(cntMap);
-            return Array.from(cntMap, ([key, value]) => ({ category : key, frequency : value }));
+            return Array.from(cntMap, ([key, values]) => ({ category : key, ...values }));
         }
         const filters = {};
         function filterOut(row) {
@@ -99,14 +111,25 @@
             }
             return true;
         }
-        function barGraph(data) {
-            const xs = d3.scaleBand().domain(data.map(d => d.category)).range([margin, width+margin]).padding(0.05);
-            const ys = d3.scaleLinear().domain([0, d3.max(data, d => d.frequency)]).range([height, 0]);
-            disp.selectAll('.rect').data(data).enter().append('rect')
-                .attr('x', d => xs(d.category))
-                .attr('y', d => ys(d.frequency))
+        function barGraph(data, colors) {
+            let keys = Object.keys(data[0]);
+            const category = keys[0];
+            keys = keys.slice(1);
+            const stack = d3.stack().keys(keys);
+            const series = stack(data);
+            const xs = d3.scaleBand().domain(data.map(d => d[category])).range([margin, width+margin]).padding(0.05);
+            const ys = d3.scaleLinear().domain([0, d3.max(series[series.length - 1], d => d[1])]).range([height, 0]);
+            const layers = disp.selectAll('.layer')
+                                .data(series)
+                                .join('g')
+                                .attr('class', 'layer')
+                                .attr('fill', (d, i) => colors[i]);
+            layers.selectAll('.rect')
+                .data(d => d).join('rect')
+                .attr('x', d => xs(d.data[category]))
+                .attr('y', d => ys(d[1]))
                 .attr('width', xs.bandwidth())
-                .attr('height', d => height - ys(d.frequency));
+                .attr('height', d => ys(d[0]) - ys(d[1]));
             // axes
             newGroup(0, height).call(d3.axisBottom(xs))
                 .selectAll('text')
@@ -118,16 +141,22 @@
         }
 
         let currPage = 0;
-        const totalPages = 2;
+        const totalPages = 4;
         async function setPage(pageNum) {
             const data = await getData1v1();
             resetSVG();
             switch (pageNum) {
             case 0:
-                barGraph(colValCnts(data, 'map_type.name'));
+                barGraph(colValCnts(data, ['map_type.name']), ['darkgrey']);
                 break;
             case 1:
-                barGraph(colValCnts(data, 'civ.win.name'));
+                barGraph(colValCnts(data, ['civ.win.name', 'civ.lose.name']), ['lightgreen', '#FF9998']);
+                break;
+            case 2:
+                barGraph(colValCnts(data, ['colorname_win', 'colorname_lose']), ['lightgreen', '#FF9998']);
+                break;
+            case 3:
+                barGraph(colValCnts(data, ['rating_change.win']), ['darkgrey']);
                 break;
             default:
                 break;
@@ -146,7 +175,7 @@
             return range;
         }
 
-        async function addDoubleSlider(sldrName, colName) {
+        async function addDoubleSlider(sldrName, colName, scaleType) {
             const cntrl_width = 240;
             const sldr_height = 50;
             const padding = 20;
@@ -155,9 +184,12 @@
             const range = await colRange(colName);
             const currRange = [...range];
             filters[colName] = currRange;
-
-            const xs = d3.scaleLinear().domain(range).range([6 * sldrName.length + padding, cntrl_width - padding]);
-
+            let xs;
+            switch (scaleType) {
+            case 'log': xs = d3.scaleLog(); break;
+            default: xs = d3.scaleLinear(); break;
+            }
+            xs = xs.domain(range).range([6 * sldrName.length + padding, cntrl_width - padding]);
             sldr.append('line')
                 .attr('x1', xs.range()[0]).attr('y1', sldr_height / 2)
                 .attr('x2', xs.range()[1]).attr('y2', sldr_height / 2)
@@ -201,10 +233,16 @@
         }
         function sortMap(map) {
             return new Map([...map.entries()].sort((a, b) => {
-                if (typeof a[0] === 'string' && typeof b[0] === 'string') {
-                    return a[0].localeCompare(b[0]);
+                if ((typeof a[0]) === (typeof b[0])) {
+                    switch (typeof a[0]) {
+                    case 'string': return a[0].localeCompare(b[0]);
+                    case 'number':
+                        if (Number.isNaN(a[0]) || Number.isNaN(b[0])) return Number.isNaN(a[0]) - Number.isNaN(b[0]);
+                        return a[0] - b[0];
+                    default: return 0;
+                    }
                 }
-                return a[0] - b[0];
+                return (typeof a[0]).localeCompare(typeof b[0]);
             }));
         }
     </script>
