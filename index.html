@@ -121,7 +121,7 @@
                         + 'higher rated. The ELO ranking system is designed this way and is what enables the fun of tight competition in the first place.\n'
                         + 'My final tip is for competitive players to focus on their journey and not just a target rating.'
                 );
-                barGraph(colValCnts(data, ['rating_change.win']), ['darkgrey'], ['Rating Change', 'Total Matches', 'Histogram of AoE2 Rating Loss/Gain'], true);
+                barGraph(colValCnts(data, ['rating_change.win']), ['darkgrey'], ['Winner\'s Gain in Rating', 'Total Matches', 'Histogram of AoE2 Winners\' Rating Gain'], true);
                 break;
             default:
                 break;
@@ -254,7 +254,7 @@
             disp.append('text')
                 .attr('text-anchor', 'end')
                 .attr('x', 2 * margins.left + (width / 2))
-                .attr('y', height + margins.bottom + 40)
+                .attr('y', height + margins.bottom + 30)
                 .attr('font-size', '20px')
                 .attr('font-weight', 'bold')
                 .text(axisNames[0]);
